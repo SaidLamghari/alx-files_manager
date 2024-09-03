@@ -1,103 +1,93 @@
 // controllers/UsersController.js
 // import
-import bcrypt from 'bcrypt';
-import { ObjectId } from 'mongodb';
-import Queue from 'bull';
-import dbClient from '../utils/db';
-import redisClient from '../utils/redis';
+import sha1 from 'sha1'; // Importation de la bibliothèque sha1 pour le hachage des mots de passe
+import { ObjectId } from 'mongodb'; // Importation d'ObjectId pour travailler avec les identifiants MongoDB
+import Queue from 'bull'; // Importation de Bull pour la gestion des queues
+import dbClient from '../utils/db'; // Importation du client MongoDB depuis le module utils/db
+import redisClient from '../utils/redis'; // Importation du client Redis depuis le module utils/redis
 
-// Création d'une nouvelle queue Bull pour les tâches utilisateur
+// Création d'une queue pour les tâches liées aux utilisateurs
 const userQueue = new Queue('userQueue', 'redis://127.0.0.1:6379');
 
 class UsersController {
   /**
    * Crée un nouvel utilisateur.
-   * Cette méthode attend un email et un mot de passe dans le corps de la requête.
-   * Hache le mot de passe avant de le stocker dans la base de données.
-   * Enfile une tâche pour le nouvel utilisateur dans la queue Bull.
-   * @param {Object} req - La requête HTTP.
-   * @param {Object} res - La réponse HTTP.
-   * @returns {Object} La réponse HTTP avec l'état de la création de l'utilisateur.
+   * @param {Object} request - La requête HTTP contenant les données du nouvel utilisateur.
+   * @param {Object} response - La réponse HTTP pour renvoyer le résultat de l'opération.
    */
-  static async postNew(req, res) {
+  static async postNew(request, response) {
+    const { email, password } = request.body;
+
+    // Vérifie la présence de l'email et du mot de passe dans la requête
+    if (!email) {
+      return response.status(400).json({ error: 'Missing email' });
+    }
+    if (!password) {
+      return response.status(400).json({ error: 'Missing password' });
+    }
+
     try {
-      const { email, password } = req.body;
+      const users = dbClient.db.collection('users'); // Accède à la collection des utilisateurs dans MongoDB
+      const existingUser = await users.findOne({ email }); // Vérifie si l'utilisateur existe déjà
 
-      // Vérifie que l'email et le mot de passe sont fournis dans le corps de la requête
-      if (!email || !password) {
-        return res.status(400).json({ error: 'Missing email or password' });
-      }
-
-      const users = dbClient.db.collection('users');
-
-      // Vérifie si un utilisateur avec cet email existe déjà
-      const existingUser = await users.findOne({ email });
       if (existingUser) {
-        // Retourne une erreur si l'utilisateur existe déjà
-        return res.status(400).json({ error: 'User already exists' });
+        return response.status(400).json({ error: 'User already exists' }); // Retourne une erreur si l'utilisateur existe
       }
 
-      // Hache le mot de passe pour le stocker en toute sécurité
-      const hashedPassword = await bcrypt.hash(password, 10);
-
-      // Insère le nouvel utilisateur dans la base de données
+      const hashedPassword = sha1(password); // Hache le mot de passe avec sha1
       const result = await users.insertOne({
         email,
         password: hashedPassword,
-      });
+      }); // Insère le nouvel utilisateur dans la base de données
 
-      // Enfile une tâche pour le nouvel utilisateur dans la queue Bull
+      // Ajoute une tâche à la queue pour traitement ultérieur
       userQueue.add({ userId: result.insertedId });
 
-      // Retourne une réponse avec l'ID et l'email de l'utilisateur nouvellement créé
-      return res.status(201).json({ id: result.insertedId, email });
+      // Répond avec les détails du nouvel utilisateur
+      return response.status(201).json({ id: result.insertedId, email });
     } catch (error) {
-      // En cas d'erreur, log l'erreur et retourne une réponse d'erreur 500
-      console.error('Error creating user:', error);
-      return res.status(500).json({ error: 'Internal Server Error' });
+      console.error('Error creating user:', error); // Journalise l'erreur en cas de problème
+      return response.status(500).json({ error: 'Internal server error' }); // Répond avec une erreur interne du serveur
     }
   }
 
   /**
-   * Obtient les informations de l'utilisateur actuellement connecté.
-   * Cette méthode attend un token d'authentification dans l'en-tête X-Token.
-   * @param {Object} req - La requête HTTP.
-   * @param {Object} res - La réponse HTTP.
-   * @returns {Object} La réponse HTTP avec les informations de l'utilisateur ou une erreur.
+   * Récupère les informations de l'utilisateur courant à partir du token d'authentification.
+   * @param {Object} request - La requête HTTP contenant le token d'authentification.
+   * @param {Object} response - La réponse HTTP pour renvoyer les informations de l'utilisateur.
    */
-  static async getMe(req, res) {
+  static async getMe(request, response) {
+    const token = request.header('X-Token'); // Récupère le token d'authentification depuis l'en-tête
+
+    if (!token) {
+      return response.status(401).json({ error: 'Missing token' }); // Retourne une erreur si le token est absent
+    }
+
+    const key = `auth_${token}`; // Crée la clé pour accéder au token dans Redis
+
     try {
-      const token = req.header('X-Token');
+      const userId = await redisClient.get(key); // Récupère l'ID utilisateur depuis Redis
 
-      // Vérifie que le token est présent dans l'en-tête de la requête
-      if (!token) {
-        return res.status(401).json({ error: 'Token required' });
-      }
-
-      // Création de la clé Redis pour récupérer les données de l'utilisateur
-      const key = `auth_${token}`;
-      const userId = await redisClient.get(key);
-
-      // Vérifie si le token est valide et récupère l'ID de l'utilisateur
       if (!userId) {
-        console.log('Authentication error!');
-        return res.status(401).json({ error: 'Unauthorized' });
+        console.log('Authentication error: Token not found'); // Journalise une erreur si le token n'est pas trouvé
+        return response.status(401).json({ error: 'Unauthorized' }); // Répond avec une erreur non autorisée
       }
 
-      const users = dbClient.db.collection('users');
-      // Récupère les informations de l'utilisateur à partir de l'ID stocké dans Redis
+      const users = dbClient.db.collection('users'); // Accède à la collection des utilisateurs dans MongoDB
       const user = await users.findOne({ _id: new ObjectId(userId) });
+      // Recherche l'utilisateur par son ID
 
-      // Retourne les détails de l'utilisateur s'il est trouvé
       if (user) {
-        return res.status(200).json({ id: user._id, email: user.email });
+        // Répond avec les détails de l'utilisateur
+        return response.status(200).json({ id: userId, email: user.email });
       }
-      // Retourne une erreur si l'utilisateur n'est pas trouvé
-      return res.status(401).json({ error: 'Unauthorized' });
+
+      // Répond avec une erreur non autorisée si l'utilisateur n'est pas trouvé
+      return response.status(401).json({ error: 'Unauthorized' });
     } catch (error) {
-      // En cas d'erreur, log l'erreur et retourne une réponse d'erreur 500
-      console.error('Error fetching user:', error);
-      return res.status(500).json({ error: 'Internal Server Error' });
+      console.error('Error retrieving user:', error); // Journalise l'erreur en cas de problème
+      // Répond avec une erreur interne du serveur
+      return response.status(500).json({ error: 'Internal server error' });
     }
   }
 }
