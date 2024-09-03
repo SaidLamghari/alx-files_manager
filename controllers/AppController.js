@@ -1,13 +1,12 @@
 // Importer le client Redis depuis
 // le module utilitaire 'redis'
-// Ce client est utilisé pour
-// vérifier l'état de la connexion Redis.
+// Ce client permet de vérifier
+// l'état de la connexion à Redis.
 const redisClient = require('../utils/redis');
 
 // Importer le client de base de données depuis le module utilitaire 'db'
-// Ce client est utilisé pour vérifier l'état de
-// la connexion à la base de données
-// et pour récupérer des statistiques.
+// Ce client est utilisé pour vérifier l'état de la
+// connexion à la base de données et pour obtenir des statistiques.
 const dbClient = require('../utils/db');
 
 // Contrôleur pour obtenir le statut de Redis et de la base de données
@@ -22,12 +21,13 @@ async function getStatus(req, res) {
     const dbStatus = dbClient.isAlive();
 
     // Envoyer une réponse JSON avec le statut des deux services
-    // Le statut 200 indique que la requête a été traitée avec succès.
-    res.status(200).json({ redis: redisStatus, db: dbStatus });
+    // Le statut HTTP 200 indique
+    // que la requête a été traitée avec succès.
+    return res.status(200).json({ redis: redisStatus, db: dbStatus });
   } catch (error) {
     // En cas d'erreur, envoyer une réponse JSON avec le message d'erreur
-    // Le statut 500 indique une erreur interne du serveur.
-    res.status(500).json({ error: 'Internal Server Error' });
+    // Le statut HTTP 500 indique une erreur interne du serveur.
+    return res.status(500).json({ error: 'Internal Server Error' });
   }
 }
 
@@ -36,11 +36,9 @@ async function getStatus(req, res) {
 // l'attente des réponses des requêtes à la base de données.
 async function getStats(req, res) {
   try {
-    // Vérifier si la base de données est
-    // opérationnelle avant de procéder aux requêtes
+    // Vérifier si la base de données est opérationnelle avant de faire des requêtes
     if (!dbClient.isAlive()) {
-      // Si la base de données n'est pas connectée,
-      // renvoyer une erreur avec le statut 500
+      // Si la base de données n'est pas connectée, renvoyer une erreur avec le statut HTTP 500
       return res.status(500).json({ error: 'Database is not connected' });
     }
 
@@ -51,17 +49,17 @@ async function getStats(req, res) {
     const filesCount = await dbClient.nbFiles();
 
     // Envoyer une réponse JSON avec le nombre d'utilisateurs et de fichiers
-    // Le statut 200 indique que la requête a été traitée avec succès.
-    res.status(200).json({ users: usersCount, files: filesCount });
+    // Le statut HTTP 200 indique que la requête a été traitée avec succès.
+    return res.status(200).json({ users: usersCount, files: filesCount });
   } catch (error) {
     // En cas d'erreur, envoyer une réponse JSON avec le message d'erreur
-    // Le statut 500 indique une erreur interne du serveur.
-    res.status(500).json({ error: 'Internal Server Error' });
+    // Le statut HTTP 500 indique une erreur interne du serveur.
+    return res.status(500).json({ error: 'Internal Server Error' });
   }
 }
 
-// Exporter les fonctions de contrôleur pour qu'elles
-// puissent être utilisées dans les routes
+// Exporter les fonctions de contrôleur pour
+// qu'elles puissent être utilisées dans les routes
 module.exports = {
   getStatus,
   getStats,
