@@ -1,72 +1,105 @@
-// Importer le module 'crypto' pour
-// le hachage des mots de passe
-// Ce module est utilisé pour créer
-// des hachages sécurisés des mots de passe.
-const crypto = require('crypto');
+// controllers/UsersController.js
+// import
+import bcrypt from 'bcrypt';
+import { ObjectId } from 'mongodb';
+import Queue from 'bull';
+import dbClient from '../utils/db';
+import redisClient from '../utils/redis';
 
-// Importer le client de base de données depuis le module utilitaire 'db'
-// Ce client est utilisé pour interagir avec la
-// base de données, notamment pour les opérations liées aux utilisateurs.
-const dbClient = require('../utils/db');
+// Création d'une nouvelle queue Bull pour les tâches utilisateur
+const userQueue = new Queue('userQueue', 'redis://127.0.0.1:6379');
 
-// Contrôleur pour créer un nouvel utilisateur
-// Cette fonction est asynchrone pour permettre
-// l'attente des opérations sur la base de données.
-async function postNew(req, res) {
-  try {
-    // Extraire les données de la requête POST
-    const { email, password } = req.body;
+class UsersController {
+  /**
+   * Crée un nouvel utilisateur.
+   * Cette méthode attend un email et un mot de passe dans le corps de la requête.
+   * Hache le mot de passe avant de le stocker dans la base de données.
+   * Enfile une tâche pour le nouvel utilisateur dans la queue Bull.
+   * @param {Object} req - La requête HTTP.
+   * @param {Object} res - La réponse HTTP.
+   * @returns {Object} La réponse HTTP avec l'état de la création de l'utilisateur.
+   */
+  static async postNew(req, res) {
+    try {
+      const { email, password } = req.body;
 
-    // Valider les entrées de l'utilisateur
-    // Vérifier que l'email est fourni
-    if (!email) {
-      return res.status(400).json({ error: 'Missing email' });
+      // Vérifie que l'email et le mot de passe sont fournis dans le corps de la requête
+      if (!email || !password) {
+        return res.status(400).json({ error: 'Missing email or password' });
+      }
+
+      const users = dbClient.db.collection('users');
+
+      // Vérifie si un utilisateur avec cet email existe déjà
+      const existingUser = await users.findOne({ email });
+      if (existingUser) {
+        // Retourne une erreur si l'utilisateur existe déjà
+        return res.status(400).json({ error: 'User already exists' });
+      }
+
+      // Hache le mot de passe pour le stocker en toute sécurité
+      const hashedPassword = await bcrypt.hash(password, 10);
+
+      // Insère le nouvel utilisateur dans la base de données
+      const result = await users.insertOne({
+        email,
+        password: hashedPassword,
+      });
+
+      // Enfile une tâche pour le nouvel utilisateur dans la queue Bull
+      userQueue.add({ userId: result.insertedId });
+
+      // Retourne une réponse avec l'ID et l'email de l'utilisateur nouvellement créé
+      return res.status(201).json({ id: result.insertedId, email });
+    } catch (error) {
+      // En cas d'erreur, log l'erreur et retourne une réponse d'erreur 500
+      console.error('Error creating user:', error);
+      return res.status(500).json({ error: 'Internal Server Error' });
     }
+  }
 
-    // Vérifier que le mot de passe est fourni
-    if (!password) {
-      return res.status(400).json({ error: 'Missing password' });
+  /**
+   * Obtient les informations de l'utilisateur actuellement connecté.
+   * Cette méthode attend un token d'authentification dans l'en-tête X-Token.
+   * @param {Object} req - La requête HTTP.
+   * @param {Object} res - La réponse HTTP.
+   * @returns {Object} La réponse HTTP avec les informations de l'utilisateur ou une erreur.
+   */
+  static async getMe(req, res) {
+    try {
+      const token = req.header('X-Token');
+
+      // Vérifie que le token est présent dans l'en-tête de la requête
+      if (!token) {
+        return res.status(401).json({ error: 'Token required' });
+      }
+
+      // Création de la clé Redis pour récupérer les données de l'utilisateur
+      const key = `auth_${token}`;
+      const userId = await redisClient.get(key);
+
+      // Vérifie si le token est valide et récupère l'ID de l'utilisateur
+      if (!userId) {
+        console.log('Authentication error!');
+        return res.status(401).json({ error: 'Unauthorized' });
+      }
+
+      const users = dbClient.db.collection('users');
+      // Récupère les informations de l'utilisateur à partir de l'ID stocké dans Redis
+      const user = await users.findOne({ _id: new ObjectId(userId) });
+
+      // Retourne les détails de l'utilisateur s'il est trouvé
+      if (user) {
+        return res.status(200).json({ id: user._id, email: user.email });
+      }
+      // Retourne une erreur si l'utilisateur n'est pas trouvé
+      return res.status(401).json({ error: 'Unauthorized' });
+    } catch (error) {
+      // En cas d'erreur, log l'erreur et retourne une réponse d'erreur 500
+      console.error('Error fetching user:', error);
+      return res.status(500).json({ error: 'Internal Server Error' });
     }
-
-    // Vérifier si l'email existe déjà dans la base de données
-    const usersCollection = dbClient.db.collection('users');
-
-    // Rechercher un utilisateur existant avec le même email
-    const existingUser = await usersCollection.findOne({ email });
-
-    // Si l'utilisateur existe déjà, renvoyer une erreur
-    if (existingUser) {
-      return res.status(400).json({ error: 'Already exist' });
-    }
-
-    // Hacher le mot de passe pour le stockage sécurisé
-    // Utiliser l'algorithme de hachage SHA-1
-    // pour créer un hachage du mot de passe
-    const hashedPassword = crypto.createHash('sha1').update(password).digest('hex');
-
-    // Créer un nouvel utilisateur avec
-    // l'email et le mot de passe haché
-    const result = await usersCollection.insertOne({ email, password: hashedPassword });
-
-    // Créer un objet représentant le nouvel utilisateur
-    // Inclure l'ID généré par la base de données et l'email
-    const newUser = { id: result.insertedId.toString(), email };
-
-    // Retourner une réponse JSON avec le nouvel utilisateur
-    // Le statut HTTP 201 indique
-    // que la ressource a été créée avec succès.
-    return res.status(201).json(newUser);
-  } catch (error) {
-    // En cas d'erreur, enregistrer l'erreur
-    // dans la console et renvoyer une réponse JSON
-    // Le statut HTTP 500 indique une erreur interne du serveur.
-    console.error('Error creating user:', error);
-    return res.status(500).json({ error: 'Internal Server Error' });
   }
 }
 
-// Exporter la fonction 'postNew' pour
-// qu'elle puisse être utilisée dans les routes
-module.exports = {
-  postNew,
-};
+export default UsersController;
