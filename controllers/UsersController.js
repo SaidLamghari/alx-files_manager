@@ -1,79 +1,65 @@
 // controllers/UsersController.js
 // import
 // controllers/UsersController.js
+// Importation du client de base de données
+// Importation du module sha1 pour le hachage des mots de passe
 import sha1 from 'sha1';
-import Queue from 'bull';
-import { ObjectId } from 'mongodb';
+// Importation du module Queue de Bull
+// pour la gestion des files d'attente
+import Queue from 'bull/lib/queue';
 import dbClient from '../utils/db';
 
-// Create a Bull queue instance for user email jobs
-const userQueue = new Queue('userQueue', {
-  redis: {
-    host: 'localhost', // Replace with your Redis host
-    port: 6379, // Replace with your Redis port
-  },
-});
+// Création d'une nouvelle
+// file d'attente nommée 'email sending'
+const userQueue = new Queue('email sending');
 
-export default class UsersController {
-  /**
-   * Handles user creation.
-   * @param {Object} req - The request object.
-   * @param {Object} res - The response object.
-   */
-  static async postNew(req, res) {
-    const { email, password } = req.body;
+class UsersController {
+  // Méthode statique pour traiter la création d'un nouvel utilisateur
+  static async postNew(rq, rs) {
+    // Extraction de l'email et du mot de passe depuis le corps de la requête
+    const { email = null, password = null } = rq.body || {};
 
+    // Vérification de la présence de l'email
     if (!email) {
-      return res.status(400).json({ error: 'Missing email' });
+      // Réponse avec un code d'état 400 si l'email est manquant
+      rs.status(400).json({ error: 'Missing email' });
+      return;
     }
+    // Vérification de la présence du mot de passe
     if (!password) {
-      return res.status(400).json({ error: 'Missing password' });
+      // Réponse avec un code d'état 400 si le mot de passe est manquant
+      rs.status(400).json({ error: 'Missing password' });
+      return;
     }
+    // Recherche de l'utilisateur dans la base de données par email
+    const valuser = await (await dbClient.usersCollection()).findOne({ email });
 
-    try {
-      const usersCollection = await dbClient.usersCollection();
-
-      // Check if user already exists
-      const existingUser = await usersCollection.findOne({ email });
-      if (existingUser) {
-        return res.status(400).json({ error: 'User already exists' });
-      }
-
-      // Hash the password
-      const hashedPassword = sha1(password);
-
-      // Create new user document
-      const result = await usersCollection.insertOne({ email, password: hashedPassword });
-      const userId = result.insertedId.toString();
-
-      // Add user to queue for sending welcome email
-      userQueue.add('sendWelcomeEmail', { userId });
-
-      res.status(201).json({
-        email,
-        id: userId,
-      });
-    } catch (error) {
-      console.error('Error creating user:', error);
-      res.status(500).json({ error: 'Internal server error' });
+    // Si l'utilisateur existe déjà, réponse avec une erreur
+    if (valuser) {
+      // Réponse avec un code d'état 400 si l'utilisateur existe déjà
+      rs.status(400).json({ error: 'Already exist' });
+      return;
     }
+    // Insertion du nouvel utilisateur dans la base de données avec le mot de passe haché
+    const insertionInfo = await (await dbClient.usersCollection())
+      .insertOne({ email, password: sha1(password) });
+    // Récupération de l'identifiant de l'utilisateur nouvellement inséré
+    const userId = insertionInfo.insertedId.toString();
+
+    // Ajout d'une tâche dans la file d'attente pour l'envoi d'un email
+    userQueue.add({ userId });
+    // Réponse avec un code d'état 201 et les informations de l'utilisateur créé
+    rs.status(201).json({ email, id: userId });
   }
 
-  /**
-   * Fetches the details of the authenticated user.
-   * @param {Object} req - The request object.
-   * @param {Object} res - The response object.
-   */
-  static async getMe(req, res) {
-    const { user } = req;
+  // Méthode statique pour obtenir les informations de l'utilisateur courant
+  static async getMe(rq, rs) {
+    // Récupération des informations de l'utilisateur depuis l'objet de requête
+    const { valuser } = rq;
 
-    if (!user) {
-      return res.status(401).json({ error: 'Unauthorized' });
-    }
-
-    res.status(200).json({
-      email: user.email,
-      id: user._id.toString(),
-    });
+    // Réponse avec un code d'état 200 et les informations de l'utilisateur
+    rs.status(200).json({ email: valuser.email, id: valuser._id.toString() });
   }
 }
+
+export default UsersController;
