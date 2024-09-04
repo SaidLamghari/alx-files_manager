@@ -2,8 +2,8 @@
 // Express est un framework web pour Node.js
 // qui simplifie la gestion des requêtes HTTP.
 // said
-import express from 'express';  // Importation du module Express
-import router from './routes/index';  // Importation du routeur défini dans le fichier './routes/index'
+import express from 'express'; // Importation du module Express
+import router from './routes/index'; // Importation du routeur défini dans le fichier './routes/index'
 
 // Définition du port d'écoute. Utilise la variable d'environnement PORT ou 5000 par défaut.
 const port = parseInt(process.env.PORT, 10) || 5000;
@@ -23,7 +23,6 @@ app.listen(port, () => {
   console.log(`server running on port ${port}`);
 });
 
-// Exportation de l'application Express pour pouvoir 
+// Exportation de l'application Express pour pouvoir
 // l'utiliser dans d'autres modules (par exemple, pour les tests)
 export default app;
-
