@@ -1,60 +1,74 @@
-import sha1 from 'sha1';
-// Importation du module Queue de Bull
-// pour la gestion des files d'attente
-import Queue from 'bull/lib/queue';
-import dbClient from '../utils/db';
+import sha1 from 'sha1'; // Importation de la bibliothèque pour le hachage SHA-1
+import { ObjectID } from 'mongodb'; // Importation de l'ObjectID pour MongoDB
+import Queue from 'bull'; // Importation de Bull pour la gestion des files d'attente avec Redis
+import dbClient from '../utils/db'; // Importation du client de base de données
+import redisClient from '../utils/redis'; // Importation du client Redis
 
-// Création d'une nouvelle
-// file d'attente nommée 'email sending'
-const userQueue = new Queue('email sending');
+// Création d'une nouvelle file d'attente Bull pour la gestion des tâches utilisateur
+const userQueue = new Queue('userQueue', 'redis://127.0.0.1:6379');
 
 class UsersController {
-  // Méthode statique pour traiter la création d'un nouvel utilisateur
-  static async postNew(rq, rs) {
-    // Extraction de l'email et du mot de passe depuis le corps de la requête
-    const { email = null, password = null } = rq.body || {};
+  // Méthode statique pour créer un nouvel utilisateur
+  static postNew(request, response) {
+    const { email } = request.body; // Extraction de l'email depuis le corps de la requête
+    const { password } = request.body; // Extraction du mot de passe depuis le corps de la requête
 
     // Vérification de la présence de l'email
     if (!email) {
-      // Réponse avec un code d'état 400 si l'email est manquant
-      rs.status(400).json({ error: 'Missing email' });
+      response.status(400).json({ error: 'Missing email' }); // Réponse en cas d'email manquant
       return;
     }
     // Vérification de la présence du mot de passe
     if (!password) {
-      // Réponse avec un code d'état 400 si le mot de passe est manquant
-      rs.status(400).json({ error: 'Missing password' });
+      response.status(400).json({ error: 'Missing password' }); // Réponse en cas de mot de passe manquant
       return;
     }
-    // Recherche de l'utilisateur dans la base de données par email
-    const valuser = await (await dbClient.usersCollection()).findOne({ email });
 
-    // Si l'utilisateur existe déjà, réponse avec une erreur
-    if (valuser) {
-      // Réponse avec un code d'état 400 si l'utilisateur existe déjà
-      rs.status(400).json({ error: 'Already exist' });
-      return;
-    }
-    // Insertion du nouvel utilisateur dans la base de données avec le mot de passe haché
-    const insertionInfo = await (await dbClient.usersCollection())
-      .insertOne({ email, password: sha1(password) });
-    // Récupération de l'identifiant de l'utilisateur nouvellement inséré
-    const userId = insertionInfo.insertedId.toString();
-
-    // Ajout d'une tâche dans la file d'attente pour l'envoi d'un email
-    userQueue.add({ userId });
-    // Réponse avec un code d'état 201 et les informations de l'utilisateur créé
-    rs.status(201).json({ email, id: userId });
+    // Récupération de la collection des utilisateurs
+    const users = dbClient.db.collection('users');
+    // Recherche d'un utilisateur avec l'email fourni
+    users.findOne({ email }, (err, user) => {
+      if (user) {
+        response.status(400).json({ error: 'Already exist' }); // Réponse si l'utilisateur existe déjà
+      } else {
+        const hashedPassword = sha1(password); // Hachage du mot de passe avec SHA-1
+        // Insertion du nouvel utilisateur dans la base de données
+        users.insertOne(
+          {
+            email,
+            password: hashedPassword,
+          },
+        ).then((result) => {
+          response.status(201).json({ id: result.insertedId, email }); // Réponse avec l'ID et l'email de l'utilisateur créé
+          // Ajout de la tâche à la file d'attente Bull
+          userQueue.add({ userId: result.insertedId });
+        }).catch((error) => console.log(error)); // Gestion des erreurs lors de l'insertion
+      }
+    });
   }
 
-  // Méthode statique pour obtenir les informations de l'utilisateur courant
-  static async getMe(rq, rs) {
-    // Récupération des informations de l'utilisateur depuis l'objet de requête
-    const { valuser } = rq;
-
-    // Réponse avec un code d'état 200 et les informations de l'utilisateur
-    rs.status(200).json({ email: valuser.email, id: valuser._id.toString() });
+  // Méthode statique pour obtenir les informations de l'utilisateur connecté
+  static async getMe(request, response) {
+    const token = request.header('X-Token'); // Récupération du token depuis l'en-tête de la requête
+    const key = `auth_${token}`; // Création de la clé Redis pour récupérer l'ID utilisateur
+    const userId = await redisClient.get(key); // Récupération de l'ID utilisateur depuis Redis
+    if (userId) {
+      // Récupération de la collection des utilisateurs
+      const users = dbClient.db.collection('users');
+      const idObject = new ObjectID(userId); // Création d'un ObjectID à partir de l'ID utilisateur
+      // Recherche de l'utilisateur dans la base de données
+      users.findOne({ _id: idObject }, (err, user) => {
+        if (user) {
+          response.status(200).json({ id: userId, email: user.email }); // Réponse avec les informations de l'utilisateur
+        } else {
+          response.status(401).json({ error: 'Unauthorized' }); // Réponse si l'utilisateur n'est pas autorisé
+        }
+      });
+    } else {
+      console.log('Hupatikani!'); // Message de log si l'utilisateur n'est pas trouvé dans Redis
+      response.status(401).json({ error: 'Unauthorized' }); // Réponse si le token est invalide ou absent
+    }
   }
 }
 
-export default UsersController;
+module.exports = UsersController; // Exportation du contrôleur pour qu'il puisse être utilisé dans d'autres parties de l'application
