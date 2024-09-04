@@ -11,21 +11,21 @@ import dbClient from '../utils/db';
 
 class AuthController {
   // Méthode statique pour gérer la connexion des utilisateurs
-  static async getConnect(request, response) {
+  static async getConnect(rqt, rsp) {
     // Récupération des données d'authentification depuis l'en-tête 'Authorization'
-    const authData = request.header('Authorization');
+    const valthdt = rqt.header('Authorization');
     // Décodage des données d'authentification en base64
     // Séparation du type d'authentification et des données
-    let userEmail = authData.split(' ')[1];
+    let vlusrEml = valthdt.split(' ')[1];
     // Création d'un buffer à partir de la chaîne encodée en base64
-    const valbff = Buffer.from(userEmail, 'base64');
-    userEmail = valbff.toString('ascii'); // Décodage du buffer en chaîne ASCII
-    const data = userEmail.split(':'); // Séparation de l'email et du mot de passe
+    const valbff = Buffer.from(vlusrEml, 'base64');
+    vlusrEml = valbff.toString('ascii'); // Décodage du buffer en chaîne ASCII
+    const data = vlusrEml.split(':'); // Séparation de l'email et du mot de passe
 
     // Vérification que les données contiennent à la fois l'email et le mot de passe
     if (data.length !== 2) {
       // Envoie une réponse d'erreur 401 si les données sont incorrectes
-      response.status(401).json({ error: 'Unauthorized' });
+      rsp.status(401).json({ error: 'Unauthorized' });
       return;
     }
 
@@ -37,37 +37,37 @@ class AuthController {
       if (user) {
         // Si l'utilisateur est trouvé, générer un token unique
         const token = uuidv4();
-        const key = `auth_${token}`; // Création d'une clé Redis associée au token
+        const ky = `auth_${token}`; // Création d'une clé Redis associée au token
         // Stocker l'ID utilisateur dans Redis avec une expiration de 24 heures
-        await redisClient.set(key, user._id.toString(), 60 * 60 * 24);
+        await redisClient.set(ky, user._id.toString(), 60 * 60 * 24);
         // Envoie une réponse avec le token d'authentification
-        response.status(200).json({ token });
+        rsp.status(200).json({ token });
       } else {
         // Si l'utilisateur n'est pas trouvé, renvoyer une erreur 401 (non autorisé)
-        response.status(401).json({ error: 'Unauthorized' });
+        rsp.status(401).json({ error: 'Unauthorized' });
       }
     });
   }
 
   // Méthode statique pour gérer la déconnexion des utilisateurs
-  static async getDisconnect(request, response) {
+  static async getDisconnect(rqt, rsp) {
     // Récupération du token d'authentification depuis l'en-tête 'X-Token'
-    const token = request.header('X-Token');
-    const key = `auth_${token}`; // Création de la clé Redis associée au token
+    const token = rqt.header('X-Token');
+    const ky = `auth_${token}`; // Création de la clé Redis associée au token
     // Récupération de l'ID utilisateur associé au token depuis Redis
-    const id = await redisClient.get(key);
+    const id = await redisClient.get(ky);
     if (id) {
       // Si l'ID est trouvé, supprimer la clé du
       // token de Redis pour déconnecter l'utilisateur
-      await redisClient.del(key);
+      await redisClient.del(ky);
       // Envoie une réponse avec le statut 204 (aucun contenu)
       // pour indiquer une déconnexion réussie
-      response.status(204).json({});
+      rsp.status(204).json({});
     // else
     } else {
       // Si le token n'est pas trouvé dans Redis,
       // renvoyer une erreur 401 (non autorisé)
-      response.status(401).json({ error: 'Unauthorized' });
+      rsp.status(401).json({ error: 'Unauthorized' });
     }
   }
 }

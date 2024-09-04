@@ -1,18 +1,26 @@
 // utils/db.js
 // Importer MongoClient depuis le paquet mongodb
 // said
-import { MongoClient } from 'mongodb'; // Importation de MongoClient depuis le module mongodb
+
+// Importation de MongoClient depuis le module mongodb
+import { MongoClient } from 'mongodb';
 
 // Définition des variables d'environnement pour la connexion à la base de données
-const HOST = process.env.DB_HOST || 'localhost'; // Hôte de la base de données (défaut : localhost)
-const PORT = process.env.DB_PORT || 27017; // Port de la base de données (défaut : 27017)
-const DATABASE = process.env.DB_DATABASE || 'files_manager'; // Nom de la base de données (défaut : 'files_manager')
-const url = `mongodb://${HOST}:${PORT}`; // URL de connexion à MongoDB
+// Port de la base de données (défaut : 27017)
+const PORT = process.env.DB_PORT || 27017;
+// Hôte de la base de données (défaut : localhost)
+const HOST = process.env.DB_HOST || 'localhost';
+// Nom de la base de données (défaut : 'files_manager')
+const DATABASE = process.env.DB_DATABASE || 'files_manager';
+// URL de connexion à MongoDB
+const lnk = `mongodb://${HOST}:${PORT}`;
 
 class DBClient {
   constructor() {
     // Création d'une instance de MongoClient avec des options de configuration
-    this.client = new MongoClient(url, { useUnifiedTopology: true, useNewUrlParser: true });
+    this.client = new MongoClient(
+      lnk, { useUnifiedTopology: true, useNewUrlParser: true },
+    );
 
     // Connexion à la base de données
     this.client.connect().then(() => {
@@ -26,26 +34,33 @@ class DBClient {
 
   // Méthode pour vérifier si la connexion à la base de données est active
   isAlive() {
-    // Note : `isConnected` est obsolète dans les versions récentes de MongoDB Node.js Driver.
+    // Note : `isConnected` est obsolète dans
+    // les versions récentes de MongoDB Node.js Driver.
     // Utilisez `client.topology.isConnected()` à la place.
-    return this.client.isConnected(); // Retourne true si la connexion est active, sinon false
+    // Retourne true si la connexion est active, sinon false
+    return this.client.isConnected();
   }
 
   // Méthode pour obtenir le nombre d'utilisateurs dans la collection 'users'
   async nbUsers() {
-    const users = this.db.collection('users'); // Accès à la collection 'users'
-    const usersNum = await users.countDocuments(); // Compte le nombre de documents dans la collection
-    return usersNum; // Retourne le nombre d'utilisateurs
+    // Accès à la collection 'users'
+    const users = this.db.collection('users');
+    // Compte le nombre de documents dans la collection
+    const vusrnm = await users.countDocuments();
+    return vusrnm; // Retourne le nombre d'utilisateurs
   }
 
   // Méthode pour obtenir le nombre de fichiers dans la collection 'files'
   async nbFiles() {
-    const files = this.db.collection('files'); // Accès à la collection 'files'
-    const filesNum = await files.countDocuments(); // Compte le nombre de documents dans la collection
-    return filesNum; // Retourne le nombre de fichiers
+    // Accès à la collection 'files'
+    const fls = this.db.collection('files');
+    // Compte le nombre de documents dans la collection
+    const vflnm = await fls.countDocuments();
+    return vflnm; // Retourne le nombre de fichiers
   }
 }
 
-// Création d'une instance de DBClient et exportation pour utilisation dans d'autres modules
-const dbClient = new DBClient();
-module.exports = dbClient;
+// Création d'une instance de DBClient et
+// exportation pour utilisation dans d'autres modules
+const dbvClnt = new DBClient();
+module.exports = dbvClnt;

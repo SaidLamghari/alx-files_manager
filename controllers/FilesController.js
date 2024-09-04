@@ -8,9 +8,11 @@ import Queue from 'bull';
 // Importation du client MongoDB depuis le fichier utils/db
 import { ObjectID } from 'mongodb';
 import mime from 'mime-types';
-import dbClient from '../utils/db';
 // Importation du client Redis depuis le fichier utils/redis
 import redisClient from '../utils/redis';
+// utils
+import dbClient from '../utils/db';
+
 // Importation de ObjectID pour manipuler les identifiants MongoDB
 // Importation pour déterminer le type MIME des fichiers
 
@@ -19,11 +21,11 @@ const fileQueue = new Queue('fileQueue', 'redis://127.0.0.1:6379');
 
 class FilesController {
   // Méthode pour obtenir l'utilisateur à partir du token d'authentification
-  static async getUser(request) {
+  static async getUser(rqt) {
     // Récupère le token depuis l'en-tête 'X-Token'
-    const token = request.header('X-Token');
+    const tkn = rqt.header('X-Token');
     // Crée la clé Redis associée au token
-    const key = `auth_${token}`;
+    const key = `auth_${tkn}`;
     // Récupère l'ID utilisateur depuis Redis
     const userId = await redisClient.get(key);
 
@@ -46,30 +48,30 @@ class FilesController {
   }
 
   // Méthode pour télécharger un fichier
-  static async postUpload(request, response) {
+  static async postUpload(rqt, rsp) {
     // Obtient l'utilisateur à partir du token
-    const user = await FilesController.getUser(request);
+    const user = await FilesController.getUser(rqt);
     if (!user) {
       // Renvoie une erreur 401 si l'utilisateur n'est pas authentifié
-      return response.status(401).json({ error: 'Unauthorized' });
+      return rsp.status(401).json({ error: 'Unauthorized' });
     }
 
     // Récupère les données du corps de la requête
     const {
       name, type, parentId, isPublic = false, data,
-    } = request.body;
+    } = rqt.body;
 
     if (!name) {
       // Renvoie une erreur 400 si le nom est manquant
-      return response.status(400).json({ error: 'Missing name' });
+      return rsp.status(400).json({ error: 'Missing name' });
     }
     if (!type) {
       // Renvoie une erreur 400 si le type est manquant
-      return response.status(400).json({ error: 'Missing type' });
+      return rsp.status(400).json({ error: 'Missing type' });
     }
     if (type !== 'folder' && !data) {
       // Renvoie une erreur 400 si les données sont manquantes pour un fichier
-      return response.status(400).json({ error: 'Missing data' });
+      return rsp.status(400).json({ error: 'Missing data' });
     }
 
     // Accède à la collection 'files' dans MongoDB
@@ -82,11 +84,11 @@ class FilesController {
       const file = await files.findOne({ _id: vidObjct, userId: user._id });
       if (!file) {
         // Renvoie une erreur 400 si le parent n'est pas trouvé
-        return response.status(400).json({ error: 'Parent not found' });
+        return rsp.status(400).json({ error: 'Parent not found' });
       }
       if (file.type !== 'folder') {
         // Renvoie une erreur 400 si le parent n'est pas un dossier
-        return response.status(400).json({ error: 'Parent is not a folder' });
+        return rsp.status(400).json({ error: 'Parent is not a folder' });
       }
     }
 
@@ -100,7 +102,7 @@ class FilesController {
         isPublic,
       }).then((result) => {
         // Renvoie une réponse avec le statut 201 et les détails du dossier
-        response.status(201).json({
+        rsp.status(201).json({
           id: result.insertedId,
           userId: user._id,
           name,
@@ -145,7 +147,7 @@ class FilesController {
         localPath: flNme, // Chemin local du fichier
       }).then((result) => {
         // Renvoie une réponse avec le statut 201 et les détails du fichier
-        response.status(201).json({
+        rsp.status(201).json({
           id: result.insertedId,
           userId: user._id,
           name,
@@ -167,15 +169,15 @@ class FilesController {
   }
 
   // Méthode pour afficher les détails d'un fichier spécifique
-  static async getShow(request, response) {
+  static async getShow(rqt, rsp) {
     // Obtient l'utilisateur à partir du token
-    const user = await FilesController.getUser(request);
+    const user = await FilesController.getUser(rqt);
     if (!user) {
       // Renvoie une erreur 401 si l'utilisateur n'est pas authentifié
-      return response.status(401).json({ error: 'Unauthorized' });
+      return rsp.status(401).json({ error: 'Unauthorized' });
     }
     // Récupère l'ID du fichier depuis les paramètres de la requête
-    const fileId = request.params.id;
+    const fileId = rqt.params.id;
     // Accède à la collection 'files' dans MongoDB
     const files = dbClient.db.collection('files');
     // Convertit l'ID du fichier en ObjectID
@@ -184,24 +186,24 @@ class FilesController {
     const file = await files.findOne({ _id: vidObjct, userId: user._id });
     if (!file) {
       // Renvoie une erreur 404 si le fichier n'est pas trouvé
-      return response.status(404).json({ error: 'Not found' });
+      return rsp.status(404).json({ error: 'Not found' });
     }
     // Renvoie les détails du fichier avec le statut 200
-    return response.status(200).json(file);
+    return rsp.status(200).json(file);
   }
 
   // Méthode pour lister les fichiers d'un utilisateur
-  static async getIndex(request, response) {
+  static async getIndex(rqt, rsp) {
     // Obtient l'utilisateur à partir du token
-    const user = await FilesController.getUser(request);
+    const user = await FilesController.getUser(rqt);
     if (!user) {
       // Renvoie une erreur 401 si l'utilisateur n'est pas authentifié
-      return response.status(401).json({ error: 'Unauthorized' });
+      return rsp.status(401).json({ error: 'Unauthorized' });
     }
     // Récupère les paramètres de la requête
-    const { parentId, page } = request.query;
+    const { parentId, page } = rqt.query;
     // Définit le numéro de page (0 par défaut)
-    const pageNum = page || 0;
+    const valpgnm = page || 0;
     // Accède à la collection 'files' dans MongoDB
     const files = dbClient.db.collection('files');
     let query;
@@ -221,11 +223,11 @@ class FilesController {
           metadata: [
             // Exécution d'une autre agrégation pour obtenir le nombre total de fichiers
             { $count: 'total' },
-            { $addFields: { page: parseInt(pageNum, 10) } },
+            { $addFields: { page: parseInt(valpgnm, 10) } },
           ],
           data: [
             // Pagination des fichiers (20 fichiers par page)
-            { $skip: 20 * parseInt(pageNum, 10) },
+            { $skip: 20 * parseInt(valpgnm, 10) },
             { $limit: 20 },
           ],
         },
@@ -233,37 +235,37 @@ class FilesController {
     ]).toArray((err, result) => {
       if (result) {
         // Transformation des fichiers pour supprimer les champs inutiles
-        const final = result[0].data.map((file) => {
-          const tmpFile = {
+        const vlfl = result[0].data.map((file) => {
+          const vltpfl = {
             ...file,
             id: file._id,
           };
-          delete tmpFile._id; // Supprime l'ID interne
-          delete tmpFile.localPath; // Supprime le chemin local
-          return tmpFile;
+          delete vltpfl._id; // Supprime l'ID interne
+          delete vltpfl.localPath; // Supprime le chemin local
+          return vltpfl;
         });
         // Renvoie les fichiers avec le statut 200
-        return response.status(200).json(final);
+        return rsp.status(200).json(vlfl);
       }
       // Log les erreurs
       console.log('Error occured');
       // Renvoie une erreur 404 si les fichiers ne sont pas trouvés
-      return response.status(404).json({ error: 'Not found' });
+      return rsp.status(404).json({ error: 'Not found' });
     });
     // Retourne null pour terminer la méthode
     return null;
   }
 
   // Méthode pour rendre un fichier public
-  static async putPublish(request, response) {
+  static async putPublish(rqt, rsp) {
     // Obtient l'utilisateur à partir du token
-    const user = await FilesController.getUser(request);
+    const user = await FilesController.getUser(rqt);
     if (!user) {
       // Renvoie une erreur 401 si l'utilisateur n'est pas authentifié
-      return response.status(401).json({ error: 'Unauthorized' });
+      return rsp.status(401).json({ error: 'Unauthorized' });
     }
     // Récupère l'ID du fichier depuis les paramètres de la requête
-    const { id } = request.params;
+    const { id } = rqt.params;
     // Accède à la collection 'files' dans MongoDB
     const files = dbClient.db.collection('files');
     // Convertit l'ID du fichier en ObjectID
@@ -276,25 +278,25 @@ class FilesController {
     files.findOneAndUpdate({ _id: vidObjct, userId: user._id }, nwVle, options, (err, file) => {
       if (!file.lastErrorObject.updatedExisting) {
         // Renvoie une erreur 404 si le fichier n'est pas trouvé
-        return response.status(404).json({ error: 'Not found' });
+        return rsp.status(404).json({ error: 'Not found' });
       }
       // Renvoie le fichier mis à jour avec le statut 200
-      return response.status(200).json(file.value);
+      return rsp.status(200).json(file.value);
     });
     // Retourne null pour terminer la méthode
     return null;
   }
 
   // Méthode pour rendre un fichier privé
-  static async putUnpublish(request, response) {
+  static async putUnpublish(rqt, rsp) {
     // Obtient l'utilisateur à partir du token
-    const user = await FilesController.getUser(request);
+    const user = await FilesController.getUser(rqt);
     if (!user) {
       // Renvoie une erreur 401 si l'utilisateur n'est pas authentifié
-      return response.status(401).json({ error: 'Unauthorized' });
+      return rsp.status(401).json({ error: 'Unauthorized' });
     }
     // Récupère l'ID du fichier depuis les paramètres de la requête
-    const { id } = request.params;
+    const { id } = rqt.params;
     // Accède à la collection 'files' dans MongoDB
     const files = dbClient.db.collection('files');
     // Convertit l'ID du fichier en ObjectID
@@ -307,19 +309,19 @@ class FilesController {
     files.findOneAndUpdate({ _id: vidObjct, userId: user._id }, nwVle, options, (err, file) => {
       if (!file.lastErrorObject.updatedExisting) {
         // Renvoie une erreur 404 si le fichier n'est pas trouvé
-        return response.status(404).json({ error: 'Not found' });
+        return rsp.status(404).json({ error: 'Not found' });
       }
       // Renvoie le fichier mis à jour avec le statut 200
-      return response.status(200).json(file.value);
+      return rsp.status(200).json(file.value);
     });
     // Retourne null pour terminer la méthode
     return null;
   }
 
   // Méthode pour obtenir le contenu d'un fichier
-  static async getFile(request, response) {
+  static async getFile(rqt, rsp) {
     // Récupère l'ID du fichier depuis les paramètres de la requête
-    const { id } = request.params;
+    const { id } = rqt.params;
     // Accède à la collection 'files' dans MongoDB
     const files = dbClient.db.collection('files');
     // Convertit l'ID du fichier en ObjectID
@@ -328,7 +330,7 @@ class FilesController {
     files.findOne({ _id: vidObjct }, async (err, file) => {
       if (!file) {
         // Renvoie une erreur 404 si le fichier n'est pas trouvé
-        return response.status(404).json({ error: 'Not found' });
+        return rsp.status(404).json({ error: 'Not found' });
       }
       // Log le chemin local du fichier
       console.log(file.localPath);
@@ -336,12 +338,12 @@ class FilesController {
         // Si le fichier est public
         if (file.type === 'folder') {
           // Renvoie une erreur 400 si le fichier est un dossier
-          return response.status(400).json({ error: "A folder doesn't have content" });
+          return rsp.status(400).json({ error: "A folder doesn't have content" });
         }
         try {
           // Détermine le nom du fichier à lire
           let flNme = file.localPath;
-          const size = request.param('size');
+          const size = rqt.param('size');
           if (size) {
             flNme = `${file.localPath}_${size}`; // Ajoute la taille au nom du fichier si spécifiée
           }
@@ -350,30 +352,30 @@ class FilesController {
           // Détermine le type MIME du fichier
           const conttType = mime.contentType(file.name);
           // Renvoie le fichier avec le type MIME approprié
-          return response.header('Content-Type', conttType).status(200).send(data);
+          return rsp.header('Content-Type', conttType).status(200).send(data);
         } catch (error) {
           // Log les erreurs
           console.log(error);
           // Renvoie une erreur 404 si le fichier ne peut pas être lu
-          return response.status(404).json({ error: 'Not found' });
+          return rsp.status(404).json({ error: 'Not found' });
         }
       } else {
         // Si le fichier n'est pas public
-        const user = await FilesController.getUser(request);
+        const user = await FilesController.getUser(rqt);
         if (!user) {
           // Renvoie une erreur 404 si l'utilisateur n'est pas authentifié
-          return response.status(404).json({ error: 'Not found' });
+          return rsp.status(404).json({ error: 'Not found' });
         }
         if (file.userId.toString() === user._id.toString()) {
           // Vérifie si l'utilisateur est le propriétaire du fichier
           if (file.type === 'folder') {
             // Renvoie une erreur 400 si le fichier est un dossier
-            return response.status(400).json({ error: "A folder doesn't have content" });
+            return rsp.status(400).json({ error: "A folder doesn't have content" });
           }
           try {
             // Détermine le nom du fichier à lire
             let flNme = file.localPath;
-            const size = request.param('size');
+            const size = rqt.param('size');
             if (size) {
               // Ajoute la taille au nom du fichier si spécifiée
               flNme = `${file.localPath}_${size}`;
@@ -381,18 +383,18 @@ class FilesController {
             // Détermine le type MIME du fichier
             const conttType = mime.contentType(file.name);
             // Renvoie le fichier avec le type MIME approprié
-            return response.header('Content-Type', conttType).status(200).sendFile(flNme);
+            return rsp.header('Content-Type', conttType).status(200).sendFile(flNme);
           } catch (error) {
             // Log les erreurs
             console.log(error);
             // Renvoie une erreur 404 si le fichier ne peut pas être lu
-            return response.status(404).json({ error: 'Not found' });
+            return rsp.status(404).json({ error: 'Not found' });
           }
         } else {
           // Log les erreurs de correspondance d'utilisateur
           console.log(`Wrong user: file.userId=${file.userId}; userId=${user._id}`);
           // Renvoie une erreur 404 si l'utilisateur ne correspond pas
-          return response.status(404).json({ error: 'Not found' });
+          return rsp.status(404).json({ error: 'Not found' });
         }
       }
     });

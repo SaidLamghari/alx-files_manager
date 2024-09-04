@@ -17,9 +17,9 @@ const flQe = new Queue('fileQueue', 'redis://127.0.0.1:6379');
 const usrQue = new Queue('userQueue', 'redis://127.0.0.1:6379');
 
 // Fonction pour générer une vignette d'image avec une largeur spécifiée
-async function thumbNail(width, localPath) {
+async function thumbNail(valwth, vallcpth) {
   // Génère une vignette de l'image au chemin local avec la largeur spécifiée
-  const thumbnail = await imageThumbnail(localPath, { width });
+  const thumbnail = await imageThumbnail(vallcpth, { valwth });
   return thumbnail; // Retourne la vignette générée
 }
 
@@ -62,7 +62,7 @@ flQe.process(async (job, done) => {
     }
 
     // Récupère le chemin local du fichier
-    const flNme = file.localPath;
+    const flNme = file.vallcpth;
 
     // Génère des vignettes avec différentes largeurs
     const thmbnl1 = await thumbNail(100, flNme);
@@ -73,9 +73,9 @@ flQe.process(async (job, done) => {
     console.log('Writing files to system');
 
     // Détermine les chemins de sortie pour les vignettes
-    const img1 = `${file.localPath}_100`;
-    const img5 = `${file.localPath}_500`;
-    const img2 = `${file.localPath}_250`;
+    const img1 = `${file.vallcpth}_100`;
+    const img5 = `${file.vallcpth}_500`;
+    const img2 = `${file.vallcpth}_250`;
 
     // Écrit les vignettes dans le système de fichiers
     await fs.writeFile(img5, thmbnl5);

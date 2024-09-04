@@ -1,11 +1,13 @@
 // utils/redis.js
-// Importation de la fonction promisify pour convertir des méthodes de rappel en promesses
+// Importation de la fonction promisify pour
+// convertir des méthodes de rappel en promesses
 // said
 import { promisify } from 'util';
 // Importation de la fonction createClient depuis le module redis
 import { createClient } from 'redis';
 
-// Classe pour définir des méthodes pour les commandes Redis couramment utilisées
+// Classe pour définir des méthodes pour
+// les commandes Redis couramment utilisées
 class RedisClient {
   constructor() {
     // Création d'un client Redis
@@ -30,27 +32,33 @@ class RedisClient {
   }
 
   // Méthode pour obtenir la valeur d'une clé depuis le serveur Redis
-  async get(key) {
-    const redisGet = promisify(this.client.get).bind(this.client); // Convertit la méthode `get` en promesse
-    const value = await redisGet(key); // Obtient la valeur associée à la clé
-    return value; // Retourne la valeur obtenue
+  async get(ky) {
+    // Convertit la méthode `get` en promesse
+    const redisGet = promisify(this.client.get).bind(this.client);
+    const vl = await redisGet(ky); // Obtient la valeur associée à la clé
+    return vl; // Retourne la valeur obtenue
   }
 
   // Méthode pour définir une paire clé-valeur sur le serveur Redis
-  async set(key, value, time) {
-    const redisSet = promisify(this.client.set).bind(this.client); // Convertit la méthode `set` en promesse
-    await redisSet(key, value); // Définit la valeur pour la clé spécifiée
-    await this.client.expire(key, time); // Définit le temps d'expiration pour la clé en secondes
+  async set(ky, vl, vltm) {
+    // Convertit la méthode `set` en promesse
+    const redisSet = promisify(this.client.set).bind(this.client);
+    await redisSet(ky, vl); // Définit la valeur pour la clé spécifiée
+    // Définit le temps d'expiration pour la clé en secondes
+    await this.client.expire(ky, vltm);
   }
 
   // Méthode pour supprimer une paire clé-valeur du serveur Redis
-  async del(key) {
-    const redisDel = promisify(this.client.del).bind(this.client); // Convertit la méthode `del` en promesse
-    await redisDel(key); // Supprime la clé spécifiée
+  async del(ky) {
+    // Convertit la méthode `del` en promesse
+    const redisDel = promisify(this.client.del).bind(this.client);
+    // supprimé
+    await redisDel(ky); // Supprime la clé spécifiée
   }
 }
 
-// Création d'une instance de RedisClient et exportation pour utilisation dans d'autres modules
-const redisClient = new RedisClient();
+// Création d'une instance de RedisClient et
+// exportation pour utilisation dans d'autres modules
+const redisClnt = new RedisClient();
 
-module.exports = redisClient; // Exportation de l'instance RedisClient
+module.exports = redisClnt; // Exportation de l'instance RedisClient
