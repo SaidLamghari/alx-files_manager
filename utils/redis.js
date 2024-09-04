@@ -1,91 +1,56 @@
 // utils/redis.js
-const redis = require('redis'); // Importer le paquet Redis
+// Importation de la fonction promisify pour convertir des méthodes de rappel en promesses
+// said
+import { promisify } from 'util';
+// Importation de la fonction createClient depuis le module redis
+import { createClient } from 'redis';
 
-// Définir la classe RedisClient
+// Classe pour définir des méthodes pour les commandes Redis couramment utilisées
 class RedisClient {
   constructor() {
-    // Créer une nouvelle instance du client Redis
-    this.client = redis.createClient();
+    // Création d'un client Redis
+    this.client = createClient();
 
-    // Gérer les erreurs qui surviennent dans le client Redis
-    // Afficher les erreurs dans la console
-    this.client.on('error', (err) => {
-      console.error('Erreur du client Redis :', err);
+    // Gestion des erreurs de connexion
+    this.client.on('error', (error) => {
+      console.log(
+        `Redis client not connected to server: ${error}
+        `,
+      ); // Affichage d'un message en cas d'erreur de connexion
     });
-
-    // Lier les méthodes pour garantir le bon contexte (`this`)
-    this.isAlive = this.isAlive.bind(this);
-    this.get = this.get.bind(this);
-    this.set = this.set.bind(this);
-    this.del = this.del.bind(this);
   }
 
-  /**
-     * Vérifier si le client Redis est actuellement connecté
-     * @returns {boolean} - Retourne true si le client est connecté, sinon false
-     */
+  // Méthode pour vérifier l'état de la connexion et rapporter
   isAlive() {
-    return this.client.connected; // Retourner le statut de connexion du client Redis
+    // Vérifie si le client Redis est connecté
+    if (this.client.connected) {
+      return true; // Retourne true si la connexion est active
+    }
+    return false; // Retourne false sinon
   }
 
-  /**
-     * Obtenir la valeur associée à une clé donnée depuis Redis
-     * @param {string} key - La clé pour laquelle récupérer la valeur
-     * @returns {Promise<string|null>} - Une promesse qui se résout avec
-     * la valeur associée à la clé, ou null si non trouvé
-     */
+  // Méthode pour obtenir la valeur d'une clé depuis le serveur Redis
   async get(key) {
-    return new Promise((resolve, reject) => {
-      this.client.get(key, (err, reply) => {
-        if (err) {
-          reject(err); // Rejeter la promesse en cas d'erreur
-        } else {
-          resolve(reply); // Résoudre la promesse avec la valeur obtenue
-        }
-      });
-    });
+    const redisGet = promisify(this.client.get).bind(this.client); // Convertit la méthode `get` en promesse
+    const value = await redisGet(key); // Obtient la valeur associée à la clé
+    return value; // Retourne la valeur obtenue
   }
 
-  /**
-     * Définir une valeur pour une clé donnée dans Redis avec un temps d'expiration
-     * @param {string} key - La clé pour laquelle définir la valeur
-     * @param {string} value - La valeur à stocker
-     * @param {number} duration - Le temps d'expiration en secondes
-     * @returns {Promise<string>} - Une promesse qui se résout avec la
-     * réponse de Redis pour l'opération de définition
-     */
-  async set(key, value, duration) {
-    return new Promise((resolve, reject) => {
-      this.client.setex(key, duration, value, (err, reply) => {
-        if (err) {
-          reject(err); // Rejeter la promesse en cas d'erreur
-        } else {
-          resolve(reply); // Résoudre la promesse avec la réponse de Redis
-        }
-      });
-    });
+  // Méthode pour définir une paire clé-valeur sur le serveur Redis
+  async set(key, value, time) {
+    const redisSet = promisify(this.client.set).bind(this.client); // Convertit la méthode `set` en promesse
+    await redisSet(key, value); // Définit la valeur pour la clé spécifiée
+    await this.client.expire(key, time); // Définit le temps d'expiration pour la clé en secondes
   }
 
-  /**
-     * Supprimer la valeur associée à une clé donnée dans Redis
-     * @param {string} key - La clé à supprimer
-     * @returns {Promise<number>} - Une promesse qui se résout avec
-     * le nombre de clés supprimées (0 ou 1)
-     */
+  // Méthode pour supprimer une paire clé-valeur du serveur Redis
   async del(key) {
-    return new Promise((resolve, reject) => {
-      this.client.del(key, (err, reply) => {
-        if (err) {
-          reject(err); // Rejeter la promesse en cas d'erreur
-        } else {
-          resolve(reply); // Résoudre la promesse avec le nombre de clés supprimées
-        }
-      });
-    });
+    const redisDel = promisify(this.client.del).bind(this.client); // Convertit la méthode `del` en promesse
+    await redisDel(key); // Supprime la clé spécifiée
   }
 }
 
-// Créer et exporter une
-// instance unique de RedisClient
+// Création d'une instance de RedisClient et exportation pour utilisation dans d'autres modules
 const redisClient = new RedisClient();
-module.exports = redisClient;
+
+module.exports = redisClient; // Exportation de l'instance RedisClient

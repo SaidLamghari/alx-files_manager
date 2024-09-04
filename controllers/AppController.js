@@ -2,65 +2,38 @@
 // le module utilitaire 'redis'
 // Ce client permet de vérifier
 // l'état de la connexion à Redis.
-const redisClient = require('../utils/redis');
+// said
+import redisClient from '../utils/redis'; // Importation du client Redis depuis le fichier utils/redis
+import dbClient from '../utils/db'; // Importation du client de base de données depuis le fichier utils/db
 
-// Importer le client de base de données depuis le module utilitaire 'db'
-// Ce client est utilisé pour vérifier l'état de la
-// connexion à la base de données et pour obtenir des statistiques.
-const dbClient = require('../utils/db');
-
-// Contrôleur pour obtenir le statut de Redis et de la base de données
-// Cette fonction est asynchrone pour permettre
-// l'attente des réponses des vérifications d'état.
-async function getStatus(req, res) {
-  try {
-    // Vérifier si Redis est opérationnel
-    const redisStatus = redisClient.isAlive();
-
-    // Vérifier si la base de données est opérationnelle
-    const dbStatus = dbClient.isAlive();
-
-    // Envoyer une réponse JSON avec le statut des deux services
-    // Le statut HTTP 200 indique
-    // que la requête a été traitée avec succès.
-    return res.status(200).json({ redis: redisStatus, db: dbStatus });
-  } catch (error) {
-    // En cas d'erreur, envoyer une réponse JSON avec le message d'erreur
-    // Le statut HTTP 500 indique une erreur interne du serveur.
-    return res.status(500).json({ error: 'Internal Server Error' });
+class AppController {
+  // Méthode statique pour obtenir le statut des services
+  static getStatus(request, response) {
+    // Envoie une réponse JSON avec le statut de la connexion Redis et de la connexion à la base de données
+    response.status(200).json({
+      redis: redisClient.isAlive(), // Vérifie si la connexion Redis est active
+      db: dbClient.isAlive(), // Vérifie si la connexion à la base de données est active
+    });
   }
-}
 
-// Contrôleur pour obtenir le nombre d'utilisateurs et de fichiers
-// Cette fonction est asynchrone pour permettre
-// l'attente des réponses des requêtes à la base de données.
-async function getStats(req, res) {
-  try {
-    // Vérifier si la base de données est opérationnelle avant de faire des requêtes
-    if (!dbClient.isAlive()) {
-      // Si la base de données n'est pas connectée, renvoyer une erreur avec le statut HTTP 500
-      return res.status(500).json({ error: 'Database is not connected' });
+  // Méthode statique pour obtenir des statistiques sur le nombre d'utilisateurs et de fichiers
+  static async getStats(request, response) {
+    try {
+      // Obtient le nombre d'utilisateurs depuis la base de données
+      const usersNum = await dbClient.nbUsers();
+      // Obtient le nombre de fichiers depuis la base de données
+      const filesNum = await dbClient.nbFiles();
+      // Envoie une réponse JSON avec les statistiques des utilisateurs et des fichiers
+      response.status(200).json({
+        users: usersNum, // Nombre d'utilisateurs
+        files: filesNum, // Nombre de fichiers
+      });
+    } catch (error) {
+      // En cas d'erreur, renvoie une réponse d'erreur avec le code HTTP 500 (erreur serveur interne)
+      response.status(500).json({ error: 'Internal Server Error' });
     }
-
-    // Obtenir le nombre d'utilisateurs depuis la base de données
-    const usersCount = await dbClient.nbUsers();
-
-    // Obtenir le nombre de fichiers depuis la base de données
-    const filesCount = await dbClient.nbFiles();
-
-    // Envoyer une réponse JSON avec le nombre d'utilisateurs et de fichiers
-    // Le statut HTTP 200 indique que la requête a été traitée avec succès.
-    return res.status(200).json({ users: usersCount, files: filesCount });
-  } catch (error) {
-    // En cas d'erreur, envoyer une réponse JSON avec le message d'erreur
-    // Le statut HTTP 500 indique une erreur interne du serveur.
-    return res.status(500).json({ error: 'Internal Server Error' });
   }
 }
 
-// Exporter les fonctions de contrôleur pour
-// qu'elles puissent être utilisées dans les routes
-module.exports = {
-  getStatus,
-  getStats,
-};
+// Exportation du contrôleur pour qu'il puisse être utilisé dans d'autres parties de l'application
+module.exports = AppController;

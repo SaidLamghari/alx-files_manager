@@ -1,111 +1,117 @@
-import Queue from 'bull'; // Importation de Bull pour la gestion des queues
-import imageThumbnail from 'image-thumbnail'; // Importation de la bibliothèque pour créer des miniatures d'images
-import { promises as fs } from 'fs'; // Importation des fonctions promises de fs pour gérer les fichiers
-import { ObjectID } from 'mongodb'; // Importation d'ObjectID pour travailler avec les identifiants MongoDB
-import dbClient from './utils/db'; // Importation du client MongoDB depuis le module utils/db
+// said
+// Importation pour générer des vignettes d'image
+import imageThumbnail from 'image-thumbnail';
+// Importation des promesses de fs pour les opérations sur les fichiers
+import { promises as fs } from 'fs';
+// Importation de ObjectID pour manipuler les identifiants MongoDB
+import { ObjectID } from 'mongodb';
+// Importation de Bull pour gérer les files d'attente
+import Queue from 'bull';
+// Importation du client MongoDB depuis utils/db
+import dbClient from './utils/db';
 
-// Création des queues pour les tâches de fichiers et les tâches d'utilisateurs
-const fileQueue = new Queue('fileQueue', 'redis://127.0.0.1:6379');
-const userQueue = new Queue('userQueue', 'redis://127.0.0.1:6379');
+// Création d'une file d'attente Bull pour les fichiers avec une connexion Redis
+const flQe = new Queue('fileQueue', 'redis://127.0.0.1:6379');
 
-/**
- * Crée une miniature de l'image avec une largeur spécifiée.
- * @param {number} width - La largeur de la miniature.
- * @param {string} localPath - Le chemin local du fichier image.
- * @returns {Buffer} Le buffer contenant l'image miniature.
- */
-const thumbNail = async (width, localPath) => {
-  try {
-    // Génération de la miniature avec la largeur spécifiée
-    return await imageThumbnail(localPath, { width });
-  } catch (error) {
-    console.error('Erreur lors de la création de la miniature :', error); // Journalisation de l'erreur
-    // Lancer une nouvelle erreur pour signaler l'échec
-    throw new Error('Échec de la création de la miniature');
-  }
-};
+// Création d'une file d'attente Bull pour les utilisateurs avec une connexion Redis
+const usrQue = new Queue('userQueue', 'redis://127.0.0.1:6379');
 
-/**
- * Traite les tâches de la queue de fichiers, notamment la génération de miniatures.
- * @param {Object} job - Le job de queue contenant les données nécessaires pour le traitement.
- */
-const processFileQueue = async (job) => {
-  console.log('Traitement du job de la queue de fichiers...'); // Journalisation du début du traitement
+// Fonction pour générer une vignette d'image avec une largeur spécifiée
+async function thumbNail(width, localPath) {
+  // Génère une vignette de l'image au chemin local avec la largeur spécifiée
+  const thumbnail = await imageThumbnail(localPath, { width });
+  return thumbnail; // Retourne la vignette générée
+}
 
-  const { fileId, userId } = job.data; // Extraction des données du job
+// Traitement des tâches dans la file d'attente 'fileQueue'
+flQe.process(async (job, done) => {
+  // Affiche un message indiquant que le traitement commence
+  console.log('Processing...');
 
-  if (!fileId || !userId) {
-    throw new Error('fileId ou userId manquant'); // Vérification de la présence des données nécessaires
+  // Récupère l'ID du fichier depuis les données du job
+  const { fileId } = job.data;
+  if (!fileId) {
+    // Renvoie une erreur si l'ID du fichier est manquant
+    done(new Error('Missing fileId'));
+    return; // Terminer le traitement de cette tâche
   }
 
-  try {
-    // Accès à la collection des fichiers dans MongoDB
-    const files = dbClient.db.collection('files');
-    // Recherche du fichier par son ID
-    const file = await files.findOne({ _id: new ObjectID(fileId) });
-
-    if (!file) {
-      throw new Error('Fichier non trouvé'); // Erreur si le fichier n'existe pas
-    }
-
-    const { localPath } = file; // Récupération du chemin local du fichier
-    console.log('Génération des miniatures...'); // Journalisation du début de la génération des miniatures
-
-    // Création des miniatures avec différentes largeurs
-    const thumbnail500 = await thumbNail(500, localPath);
-    const thumbnail250 = await thumbNail(250, localPath);
-    const thumbnail100 = await thumbNail(100, localPath);
-
-    // Journalisation du début de l'écriture des miniatures
-    console.log('Écriture des miniatures sur le disque...');
-
-    // Écriture des miniatures sur le disque
-    await Promise.all([
-      fs.writeFile(`${localPath}_500`, thumbnail500),
-      fs.writeFile(`${localPath}_250`, thumbnail250),
-      fs.writeFile(`${localPath}_100`, thumbnail100),
-    ]);
-
-    console.log('Miniatures écrites avec succès'); // Journalisation de la réussite de l'écriture
-  } catch (error) {
-    // Journalisation de l'erreur
-    console.error('Erreur lors du traitement du job de la queue de fichiers :', error);
-    throw error; // Relancer l'erreur pour signaler l'échec du traitement
-  }
-};
-
-/**
- * Traite les tâches de la queue d'utilisateurs, notamment l'envoi d'un message de bienvenue.
- * @param {Object} job - Le job de queue contenant les données nécessaires pour le traitement.
- */
-const processUserQueue = async (job) => {
-  // Journalisation du début du traitement
-  console.log('Traitement du job de la queue d\'utilisateurs...');
-
-  const { userId } = job.data; // Extraction des données du job
-
+  // Récupère l'ID de l'utilisateur depuis les données du job
+  const { userId } = job.data;
   if (!userId) {
-    throw new Error('userId manquant'); // Vérification de la présence des données nécessaires
+    // Renvoie une erreur si l'ID de l'utilisateur est manquant
+    done(new Error('Missing userId'));
+    return; // Terminer le traitement de cette tâche
   }
 
-  try {
-    const users = dbClient.db.collection('users'); // Accès à la collection des utilisateurs dans MongoDB
-    // Recherche de l'utilisateur par son ID
-    const user = await users.findOne({ _id: new ObjectID(userId) });
+  // Affiche les IDs du fichier et de l'utilisateur pour le débogage
+  console.log(fileId, userId);
 
-    if (user) {
-      // Journalisation du message de bienvenue avec l'email de l'utilisateur
-      console.log(`Bienvenue ${user.email} !`);
-    } else {
-      throw new Error('Utilisateur non trouvé'); // Erreur si l'utilisateur n'existe pas
+  // Accède à la collection 'files' dans MongoDB
+  const fls = dbClient.db.collection('files');
+  // Convertit l'ID du fichier en ObjectID pour la recherche dans MongoDB
+  const vlifObj = new ObjectID(fileId);
+
+  // Recherche le fichier dans la base de données
+  fls.findOne({ _id: vlifObj }, async (err, file) => {
+    if (!file) {
+      // Affiche un message d'erreur et termine le job si le fichier n'est pas trouvé
+      console.log('Not found');
+      done(new Error('File not found'));
+      return;
     }
-  } catch (error) {
-    // Journalisation de l'erreur
-    console.error('Erreur lors du traitement du job de la queue d\'utilisateurs :', error);
-    throw error; // Relancer l'erreur pour signaler l'échec du traitement
-  }
-};
 
-// Configuration des processus de traitement des queues
-fileQueue.process(processFileQueue); // Traitement des tâches de la queue de fichiers
-userQueue.process(processUserQueue); // Traitement des tâches de la queue d'utilisateurs
+    // Récupère le chemin local du fichier
+    const flNme = file.localPath;
+
+    // Génère des vignettes avec différentes largeurs
+    const thmbnl1 = await thumbNail(100, flNme);
+    const thmbnl5 = await thumbNail(500, flNme);
+    const thmbnl2 = await thumbNail(250, flNme);
+
+    // Affiche un message indiquant que les fichiers sont en cours d'écriture
+    console.log('Writing files to system');
+
+    // Détermine les chemins de sortie pour les vignettes
+    const img1 = `${file.localPath}_100`;
+    const img5 = `${file.localPath}_500`;
+    const img2 = `${file.localPath}_250`;
+
+    // Écrit les vignettes dans le système de fichiers
+    await fs.writeFile(img5, thmbnl5);
+
+    await fs.writeFile(img2, thmbnl2);
+
+    await fs.writeFile(img1, thmbnl1);
+
+    // Marque le job comme terminé
+    done();
+  });
+});
+
+// Traitement des tâches dans la file d'attente 'userQueue'
+usrQue.process(async (job, done) => {
+  // Récupère l'ID de l'utilisateur depuis les données du job
+  const { userId } = job.data;
+  if (!userId) {
+    // Renvoie une erreur si l'ID de l'utilisateur est manquant
+    done(new Error('Missing userId'));
+    return; // Terminer le traitement de cette tâche
+  }
+
+  // Accède à la collection 'users' dans MongoDB
+  const users = dbClient.db.collection('users');
+  // Convertit l'ID de l'utilisateur en ObjectID pour la recherche dans MongoDB
+  const vlifObj = new ObjectID(userId);
+
+  // Recherche l'utilisateur dans la base de données
+  const user = await users.findOne({ _id: vlifObj });
+
+  if (user) {
+    // Affiche un message de bienvenue si l'utilisateur est trouvé
+    console.log(`Welcome ${user.email}!`);
+  } else {
+    // Renvoie une erreur si l'utilisateur n'est pas trouvé
+    done(new Error('User not found'));
+  }
+});

@@ -1,134 +1,77 @@
 // controllers/AuthController.js
-import jwt from 'jsonwebtoken';
-import bcrypt from 'bcrypt';
-import dbClient from '../utils/db';
+// said
+// Importation de la fonction sha1 pour le hachage des mots de passe
+import sha1 from 'sha1';
+// Importation de la fonction uuidv4 pour générer des tokens unique
+import { v4 as uuidv4 } from 'uuid';
+// Importation du client Redis depuis le fichier utils/redis
 import redisClient from '../utils/redis';
-
-// Clé secrète pour signer les tokens JWT
-const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key';
-// Durée d'expiration des tokens JWT
-const JWT_EXPIRATION = process.env.JWT_EXPIRATION || '1h';
+// Importation du client de base de données depuis le fichier utils/db
+import dbClient from '../utils/db';
 
 class AuthController {
-  /**
-   * Authentifie un utilisateur et génère un token JWT.
-   * Expects email et password dans le corps de la requête.
-   * @param {Object} req - La requête HTTP.
-   * @param {Object} res - La réponse HTTP.
-   * @returns {Object} La réponse HTTP avec le token JWT ou une erreur.
-   */
-  static async login(req, res) {
-    try {
-      const { email, password } = req.body;
+  // Méthode statique pour gérer la connexion des utilisateurs
+  static async getConnect(request, response) {
+    // Récupération des données d'authentification depuis l'en-tête 'Authorization'
+    const authData = request.header('Authorization');
+    // Décodage des données d'authentification en base64
+    // Séparation du type d'authentification et des données
+    let userEmail = authData.split(' ')[1];
+    // Création d'un buffer à partir de la chaîne encodée en base64
+    const valbff = Buffer.from(userEmail, 'base64');
+    userEmail = valbff.toString('ascii'); // Décodage du buffer en chaîne ASCII
+    const data = userEmail.split(':'); // Séparation de l'email et du mot de passe
 
-      // Vérifie que l'email et le mot de passe sont fournis
-      if (!email || !password) {
-        return res.status(400).json({ error: 'Email et mot de passe requis' });
-      }
-
-      const users = dbClient.db.collection('users');
-      // Recherche l'utilisateur dans la base de données par email
-      const user = await users.findOne({ email });
-
-      if (!user) {
-        // Retourne une erreur si l'utilisateur n'est pas trouvé
-        return res.status(401).json({ error: 'Email ou mot de passe invalide' });
-      }
-
-      // Compare le mot de passe fourni avec le mot de passe haché stocké
-      const match = await bcrypt.compare(password, user.password);
-
-      if (!match) {
-        // Retourne une erreur si les mots de passe ne correspondent pas
-        return res.status(401).json({ error: 'Email ou mot de passe invalide' });
-      }
-
-      // Crée un payload avec l'ID et l'email de l'utilisateur
-      const payload = { id: user._id, email: user.email };
-      // Génère un token JWT signé avec la clé secrète et la durée d'expiration
-      const token = jwt.sign(payload, JWT_SECRET, { expiresIn: JWT_EXPIRATION });
-
-      // Stocke le token dans Redis avec une expiration de 1 heure
-      const key = `auth_${token}`;
-      await redisClient.set(key, user._id.toString(), 'EX', 3600);
-
-      // Retourne le token JWT dans la réponse
-      return res.status(200).json({ token });
-    } catch (error) {
-      // En cas d'erreur, log l'erreur et retourne une réponse d'erreur 500
-      console.error('Erreur lors de la connexion :', error);
-      return res.status(500).json({ error: 'Erreur interne du serveur' });
+    // Vérification que les données contiennent à la fois l'email et le mot de passe
+    if (data.length !== 2) {
+      // Envoie une réponse d'erreur 401 si les données sont incorrectes
+      response.status(401).json({ error: 'Unauthorized' });
+      return;
     }
+
+    const hshdPsswrd = sha1(data[1]); // Hachage du mot de passe
+    // Accès à la collection 'users' dans la base de données
+    const users = dbClient.db.collection('users');
+    // Recherche d'un utilisateur correspondant à l'email et au mot de passe haché
+    users.findOne({ email: data[0], password: hshdPsswrd }, async (err, user) => {
+      if (user) {
+        // Si l'utilisateur est trouvé, générer un token unique
+        const token = uuidv4();
+        const key = `auth_${token}`; // Création d'une clé Redis associée au token
+        // Stocker l'ID utilisateur dans Redis avec une expiration de 24 heures
+        await redisClient.set(key, user._id.toString(), 60 * 60 * 24);
+        // Envoie une réponse avec le token d'authentification
+        response.status(200).json({ token });
+      } else {
+        // Si l'utilisateur n'est pas trouvé, renvoyer une erreur 401 (non autorisé)
+        response.status(401).json({ error: 'Unauthorized' });
+      }
+    });
   }
 
-  /**
-   * Déconnecte l'utilisateur en supprimant le token de Redis.
-   * Expects X-Token dans les en-têtes de la requête.
-   * @param {Object} req - La requête HTTP.
-   * @param {Object} res - La réponse HTTP.
-   * @returns {Object} La réponse HTTP avec un message de succès ou une erreur.
-   */
-  static async logout(req, res) {
-    try {
-      const token = req.header('X-Token');
-
-      // Vérifie que le token est fourni dans les en-têtes
-      if (!token) {
-        return res.status(400).json({ error: 'Token requis' });
-      }
-
-      // Crée la clé Redis pour le token et le supprime
-      const key = `auth_${token}`;
+  // Méthode statique pour gérer la déconnexion des utilisateurs
+  static async getDisconnect(request, response) {
+    // Récupération du token d'authentification depuis l'en-tête 'X-Token'
+    const token = request.header('X-Token');
+    const key = `auth_${token}`; // Création de la clé Redis associée au token
+    // Récupération de l'ID utilisateur associé au token depuis Redis
+    const id = await redisClient.get(key);
+    if (id) {
+      // Si l'ID est trouvé, supprimer la clé du
+      // token de Redis pour déconnecter l'utilisateur
       await redisClient.del(key);
-
-      // Retourne un message de succès
-      return res.status(200).json({ message: 'Déconnexion réussie' });
-    } catch (error) {
-      // En cas d'erreur, log l'erreur et retourne une réponse d'erreur 500
-      console.error('Erreur lors de la déconnexion :', error);
-      return res.status(500).json({ error: 'Erreur interne du serveur' });
-    }
-  }
-
-  /**
-   * Vérifie la validité du token JWT et autorise l'accès.
-   * Expects X-Token dans les en-têtes de la requête.
-   * @param {Object} req - La requête HTTP.
-   * @param {Object} res - La réponse HTTP.
-   * @param {Function} next - La fonction middleware pour passer au prochain middleware.
-   * @returns {Object} La réponse HTTP ou appelle la fonction next().
-   */
-  static async verifyToken(req, res, next) {
-    try {
-      const token = req.header('X-Token');
-
-      // Vérifie que le token est présent dans les en-têtes
-      if (!token) {
-        return res.status(401).json({ error: 'Token requis' });
-      }
-
-      // Crée la clé Redis pour le token et récupère l'ID utilisateur
-      const key = `auth_${token}`;
-      const userId = await redisClient.get(key);
-
-      // Vérifie si le token est valide en Redis
-      if (!userId) {
-        return res.status(401).json({ error: 'Non autorisé' });
-      }
-
-      // Vérifie et décode le token JWT
-      const decoded = jwt.verify(token, JWT_SECRET);
-      // Stocke l'ID utilisateur décodé dans la requête pour une utilisation ultérieure
-      req.userId = decoded.id;
-
-      // Passe au prochain middleware ou route handler
-      return next();
-    } catch (error) {
-      // En cas d'erreur de vérification du token, log l'erreur et retourne une réponse d'erreur 401
-      console.error('Échec de la vérification du token :', error);
-      return res.status(401).json({ error: 'Non autorisé' });
+      // Envoie une réponse avec le statut 204 (aucun contenu)
+      // pour indiquer une déconnexion réussie
+      response.status(204).json({});
+    // else
+    } else {
+      // Si le token n'est pas trouvé dans Redis,
+      // renvoyer une erreur 401 (non autorisé)
+      response.status(401).json({ error: 'Unauthorized' });
     }
   }
 }
 
-export default AuthController;
+// Exportation de la classe AuthController pour qu'elle puisse
+// être utilisée dans d'autres parties de l'application
+module.exports = AuthController;
